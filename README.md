@@ -1,14 +1,10 @@
 # Project Name
 
-The project description
+Venmo Clone Microservice
 
-## Roadmap
+# Author
 
-View the project roadmap [here](LINK_TO_DOC)
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+[Amanda Bozigian](https://github.com/amboz)
 
 # Table of Contents
 
@@ -20,16 +16,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ## Usage
 
-> Some usage instructions
+> TBD
 
 ## Requirements
 
-- Node 6.9.x
-- Redis 3.2.x
-- Postgresql 9.6.x
-- etc
+- Node 6.11.x
+- TBD
 
 ## Other Information
 
-(TODO: fill this out with details about your project. Suggested ideas: architecture diagram, schema, and any other details from your app plan that sound interesting.)
+TBD
 
