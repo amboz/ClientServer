@@ -1,5 +1,5 @@
-require ('babel-core/register');
-require ('babel-polyfill');
-const {start} = require('./app.js');
+import 'babel-core/register';
+import 'babel-polyfill';
+import {start} from './app.js';
 
 start();

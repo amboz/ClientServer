@@ -1,9 +1,11 @@
-const {MongoClient, ObjectId} = require('mongodb');
-const express = require('express');
-const bodyParser = require('body-parser');
-const {graphqlExpress, graphiqlExpress} = require('graphql-server-express');
-const {makeExecutableSchema} = require('graphql-tools');
-const cors = require('cors');
+import {MongoClient, ObjectId} from 'mongodb';
+import express from 'express';
+import bodyParser from 'body-parser';
+import {graphqlExpress, graphiqlExpress} from 'graphql-server-express';
+import {makeExecutableSchema} from 'graphql-tools';
+import cors from 'cors';
+import aws from 'aws-sdk';
+import Consumer from 'sqs-consumer';
 // const {User} = require('../database/Users.js');
 // const mongoose = require('mongoose');
 
@@ -12,20 +14,21 @@ const mongoUri = 'mongodb://localhost:27017/usersdb';
 const URL = 'http://localhost';
 const PORT = 3000;
 
-//CLIENT-SERVER TASKS:
+//CLIENT-SERVER
 //(1) get payment/cashout
-  //--> generate and send to queue
+  //--> generate and send to queue1
   //--> respond to client
 
 //(2) respond to client polling
-  //--> grab transactionIDs and statuses from queue --> add to cache
-  //--> tell queue to delete message
-  //read from cache, respond with status
+  //--> grab transactionID/user IDs/user balances from queue --> add to cache(?)
+    //--> update cached transIDs/statuses and user balances
+  //--> tell queue1 to delete message
+  //-->respond to client with transaction status (by ID) by reading from cache?
 
 //(3) reconcile balances
-  //--> grab users and balances from queue
+  //--> grab users and balances from queue2
   //--> write to db with updated balances
-  //--> tell queue to delete message
+  //--> tell queue2 to delete message
 
 export const start = async () => {
   try {
@@ -34,12 +37,11 @@ export const start = async () => {
     const User = db.collection('users');
     const TransactionId = db.collection('transactionIds');
 
-
+    /* ======================== GRAPHQL SETUP ======================== */
     const typeDefs = [`
       type Query {
         user(username: String): User
         transactionId: TransactionId
-        payment(usernameOne: String, usernameTwo: String, amount: Float): Transaction
       }
 
       type User {
@@ -101,33 +103,11 @@ export const start = async () => {
         user: async (root, {username}) => {
           return await User.findOne({username: username})
         },
-        //find a transaction by transactionId?
-        transactionId: async (root) => {
-          //TransactionId is a single, incrementing counter so only one record will be returned
-          let output = await TransactionId.findOne({});
-          console.log('trans', output);
-          return output;
-        },
-        //find a payment?
-        payment: async (root, {usernameOne, usernameTwo, amount}) => {
-          //associate usernames with user info
-          let userOne = await User.findOne({username: usernameOne});
-          let userTwo = await User.findOne({username: usernameTwo});
-
-          let output = {
-            payer: {
-              userId: userOne.userId,
-              firstName: userOne.firstName,
-              balance: userOne.balance
-            },
-            payee: {
-              userId: userTwo.userId,
-              firstName: userTwo.firstName,
-              balance: userTwo.balance
-            }
-          }
-
-          return output;
+        //find a transaction by transactionId
+        transactionId: async (root, {transactionId}) => {
+          //TransactionId is a single, incrementing counter so only one record will be returned from MongoDB
+          //TODO: Refactor to look up from a cache
+          return (await TransactionId.findOne({transactionId: transactionId}));
         }
       },
       Mutation: {
@@ -166,14 +146,28 @@ export const start = async () => {
             amount: amount,
             transactionType: transactionType,
             transactionId: await TransactionId.findOne({}),
-            timestamp: Date.now()
+            timestamp: new Date()
           }
 
-          console.log('OUTPUT', output);
+          // console.log('OUTPUT', output);
 
-          //TODO: respond to client with 200 OK?
+          //send output to Transaction Queue
+          let params = {
+            MessageBody: JSON.stringify(output),
+            QueueUrl: queueUrl,
+            DelaySeconds: 0
+          };
+
+          sqs.sendMessage(params, (err, data) => {
+            if (err) {
+              console.log('error sending message to queue with', err);
+            } else {
+              console.log('msg sent to queue');
+            } 
+          });
+
+          //below makes all fields available, responds with 200 OK
           return output;
-          //TODO: add to queue for Transactions Service
         }
       }
     }
@@ -183,7 +177,197 @@ export const start = async () => {
       resolvers
     })
 
+    /* ======================== AWS SQS (REST) ======================== */
+
     const app = express();
+    const queueUrl = 'https://sqs.us-west-1.amazonaws.com/604151587804/TransactionQueue';
+    const ledgerQueueUrl = 'https://sqs.us-west-1.amazonaws.com/604151587804/LedgerQueue';
+    const fromQueueUrl = 'https://sqs.us-west-1.amazonaws.com/604151587804/fromTransactionQueue';
+    let receipt = '';
+    let fromReceipt = ''
+
+
+    //instantiate sqs object with credentials
+    aws.config.loadFromPath(__dirname + '/../../config.json');
+    const sqs = new aws.SQS();
+
+    // ***Create Queue: uncomment and fill in QueueName for new queue***
+    app.get('/create', (req, res) => {
+      let params = {
+        QueueName: 'LedgerQueue'
+      };
+
+      sqs.createQueue(params, (err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          res.send(data);
+        }
+      });
+    });
+
+    //List avail queues
+    app.get('/list', (req, res) => {
+      sqs.listQueues((err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          res.send(data);
+        }
+      });
+    });
+
+    //Send a message
+    app.get('/send', (req, res) => {
+      let params = {
+        MessageBody: 'Hello world!',
+        QueueUrl: queueUrl,
+        DelaySeconds: 0
+      };
+
+      sqs.sendMessage(params, (err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          res.send(data);
+        } 
+      });
+    });
+
+    //Receive a message
+    app.get('/receive', (req, res) => {
+      let params = {
+        QueueUrl: queueUrl,
+        VisibilityTimeout: 600 // 10 min wait time for anyone else to process.
+      };
+    
+      sqs.receiveMessage(params, (err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          console.log('/receive MSG DATA', data);
+          consumer.handleMessage();
+          res.send(data);
+        } 
+      });
+    });
+
+    //Delete a message
+    app.get('/delete', (req, res) => {
+      let params = {
+        QueueUrl: queueUrl,
+        ReceiptHandle: receipt
+      }
+    
+      sqs.deleteMessage(params, (err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          res.send(data);
+        } 
+      });
+    });
+
+    //Purge queue
+    app.get('/purge', (req, res) => {
+      let params = {
+        QueueUrl: queueUrl
+      }
+    
+      sqs.purgeQueue(params, (err, data) => {
+        if (err) {
+          res.send(err);
+        } else {
+          res.send(data);
+        } 
+      });
+    });
+
+    /* ======================== TRANSACTION SERVICES WORKER ======================== */
+
+    const worker = Consumer.create({
+      queueUrl: queueUrl,
+      region: 'us-west-1',
+      batchSize: 10,
+      handleMessage: (message, done) => {
+        let body = JSON.parse(message.Body);
+        //work is currently just logging the body of the message
+        console.log('message body:', body);
+
+        //TODO: write to cache (db for now?) with transactionId's and their statuses
+
+
+
+        //done will remove the message from the queue
+        return done();
+      },
+      sqs: sqs
+    });
+
+    worker.on('error', function (err) {
+      console.log(err);
+      //***TODO*** Implement redrive policy to move these messages to a dead letter queue and uncomment below
+      // return done(err);
+    });
+
+    worker.on('empty', function () {
+      console.log('Consumer is empty...');
+    });
+
+    //start polling
+    worker.start();
+
+    /* ======================== LEDGER WORKER ======================== */
+
+    const ledgerWorker = Consumer.create({
+      queueUrl: ledgerQueueUrl,
+      region: 'us-west-1',
+      batchSize: 10,
+      handleMessage: (message, done) => {
+        let body = JSON.parse(message.Body);
+
+        body.forEach(async (obj) => {
+          await User.updateOne({userId: obj.userId}, {$set: {balance: obj.balance}});
+        })
+
+        //done will remove the message from the queue
+        return done();
+      },
+      sqs: sqs
+    });
+
+    ledgerWorker.on('error', function (err) {
+      console.log(err);
+      //***TODO*** Implement redrive policy to move these messages to a dead letter queue and uncomment below
+      // return done(err);
+    });
+
+    ledgerWorker.on('empty', function () {
+      console.log('Ledger Consumer is empty...');
+    });
+
+    //start polling
+    ledgerWorker.start();
+
+    //Testing Ledger Queue; uncomment to test and update userId's
+    // app.get('/sendToLedger', (req, res) => {
+    //   let body = [{"userId": 1, "balance": 100}, {"userId": 2, "balance": 100}, {"userId": 3, "balance": 100}, {"userId": 4, "balance": 100}, {"userId": 5, "balance": 100}];
+    //   let params = {
+    //     MessageBody: JSON.stringify(body),
+    //     QueueUrl: ledgerQueueUrl,
+    //     DelaySeconds: 0
+    //   };
+
+    //   sqs.sendMessage(params, (err, data) => {
+    //     if (err) {
+    //       res.send(err);
+    //     } else {
+    //       res.send(data);
+    //     } 
+    //   });
+    // });
+
+  /* ======================== CONNECTION/GRAPHQL ROUTES ======================== */
 
     app.use(cors());
 
@@ -194,7 +378,7 @@ export const start = async () => {
     }))
 
     app.listen(PORT, () => {
-      console.log(`Listenting on ${PORT}`)
+      console.log(`Listening on ${PORT}`)
     })
 
   } catch(err) {

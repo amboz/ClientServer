@@ -36,3 +36,5 @@ bower_components/
 
 src/database/helpers/users.txt
 src/database/helpers/users.json
+
+config.json

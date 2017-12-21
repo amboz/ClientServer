@@ -1,0 +1,3 @@
+ledger: [{"userId": 1, "balance": 100}, {"userId": 2, "balance": 100}, {"userId": 3, "balance": 100}, {"userId": 4, "balance": 100}, {"userId": 5, "balance": 100}];
+
+transanctions: [{"transactionID": 4901973, "userID": 7576248, "balance" : 130.42, "status": "approved"}, {"transactionID": 4901973, "userID": 7729431, "balance": 2065.84, "status": "declined"}];
