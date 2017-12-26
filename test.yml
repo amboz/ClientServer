@@ -1,0 +1,19 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 60
+      arrivalRate: 20
+      # rampTo: 1
+      name: "Warm Up Application"
+    # - duration: 300
+    #   arrivalRate: 1
+    #   name: "Max Load"
+  defaults:
+    headers:
+scenarios:
+  - flow:
+    # - get:
+    #     url: "/graphql/"
+    - post:
+      url: /graphiql?query=query%20%7B%0A%20%20getTransactionId(key%3A%20%221%22)%0A%7D&operationName=undefined
+        # url: "/"

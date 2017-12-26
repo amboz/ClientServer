@@ -1,3 +1,4 @@
+import apm from 'elastic-apm-node';
 import {MongoClient, ObjectId} from 'mongodb';
 import express from 'express';
 import bodyParser from 'body-parser';
@@ -6,6 +7,8 @@ import {makeExecutableSchema} from 'graphql-tools';
 import cors from 'cors';
 import aws from 'aws-sdk';
 import Consumer from 'sqs-consumer';
+import redis from 'redis';
+import bluebird from 'bluebird';
 // const {User} = require('../database/Users.js');
 // const mongoose = require('mongoose');
 
@@ -37,11 +40,19 @@ export const start = async () => {
     const User = db.collection('users');
     const TransactionId = db.collection('transactionIds');
 
+    const redisClient = redis.createClient(6379, '127.0.0.1');
+    bluebird.promisifyAll(redis.RedisClient.prototype);
+
+    await redisClient.on('connect', () => {
+      console.log('Redis connected');
+    })
+
     /* ======================== GRAPHQL SETUP ======================== */
     const typeDefs = [`
       type Query {
         user(username: String): User
-        transactionId: TransactionId
+        transactionId(transactionId: Int): TransactionId
+        getTransactionId(key: String!): String
       }
 
       type User {
@@ -56,8 +67,7 @@ export const start = async () => {
       }
 
       type TransactionId {
-        _id: String
-        transactionId: Int
+        status: String
       }
 
       type Transaction {
@@ -89,6 +99,8 @@ export const start = async () => {
           payeeUsername: String
           amount: Float
         ): Transaction
+
+        cacheTransactionId(key: String!, value: String!): Boolean! 
       }
 
       schema {
@@ -103,11 +115,36 @@ export const start = async () => {
         user: async (root, {username}) => {
           return await User.findOne({username: username})
         },
-        //find a transaction by transactionId
+        //find a transaction's status by transactionId
         transactionId: async (root, {transactionId}) => {
-          //TransactionId is a single, incrementing counter so only one record will be returned from MongoDB
-          //TODO: Refactor to look up from a cache
-          return (await TransactionId.findOne({transactionId: transactionId}));
+          //from db:
+            //TransactionId is a single, incrementing counter so only one record will be returned from MongoDB
+            // return (await TransactionId.findOne({transactionId: transactionId}));
+          let transId = JSON.stringify(transactionId);
+          // redisClient.get(1, function(err, data) {
+          //   return data;
+          // }));
+
+          //from cache:
+          await redisClient.get(transId, (err, data) => {
+            if (err) {
+              console.log(err);
+            } else {
+              console.log('data', data);
+              return (
+                {status: data}
+              )
+            }
+          })
+          
+          //TODO: delete from cache
+        },
+        getTransactionId: (parent, {key}) => {
+          try {
+            return redisClient.getAsync(key);
+          } catch (e) {
+            return null;
+          }
         }
       },
       Mutation: {
@@ -168,6 +205,15 @@ export const start = async () => {
 
           //below makes all fields available, responds with 200 OK
           return output;
+        },
+        cacheTransactionId: async (parent, {key, value}) => {
+          try {
+            await redisClient.set(key, value);
+            return true;
+          } catch (err) {
+            console.log(err);
+            return false;
+          }
         }
       }
     }
@@ -217,22 +263,22 @@ export const start = async () => {
       });
     });
 
-    //Send a message
-    app.get('/send', (req, res) => {
-      let params = {
-        MessageBody: 'Hello world!',
-        QueueUrl: queueUrl,
-        DelaySeconds: 0
-      };
+    //Send a message (testing only); uncomment and increment transactionID to test
+    // app.get('/send', (req, res) => {
+    //   let params = {
+    //     MessageBody: JSON.stringify([{"transactionID": 3, "userID": 2, "balance" : 110, "status": "approved"}, {"transactionID": 3, "userID": 3, "balance": 110, "status": "approved"}]),
+    //     QueueUrl: queueUrl,
+    //     DelaySeconds: 0
+    //   };
 
-      sqs.sendMessage(params, (err, data) => {
-        if (err) {
-          res.send(err);
-        } else {
-          res.send(data);
-        } 
-      });
-    });
+    //   sqs.sendMessage(params, (err, data) => {
+    //     if (err) {
+    //       res.send(err);
+    //     } else {
+    //       res.send(data);
+    //     } 
+    //   });
+    // });
 
     //Receive a message
     app.get('/receive', (req, res) => {
@@ -294,9 +340,18 @@ export const start = async () => {
         //work is currently just logging the body of the message
         console.log('message body:', body);
 
-        //TODO: write to cache (db for now?) with transactionId's and their statuses
+        //write transactions to cache
+        body.forEach(async (obj) => {
+          console.log('in worker redis write');
+          redisClient.set(obj.transactionID, obj.status);
+        })
 
-
+        //update user balances in db
+        body.forEach(async (obj) => {
+          //NOTE: message coming from Transaction queue uses "ID" instead of "Id"
+          console.log('in worker db write');
+          await User.updateOne({userId: obj.userID}, {$set: {balance: obj.balance}});
+        })
 
         //done will remove the message from the queue
         return done();
@@ -377,6 +432,8 @@ export const start = async () => {
       endpointURL: '/graphql'
     }))
 
+    app.use(apm.middleware.express());
+
     app.listen(PORT, () => {
       console.log(`Listening on ${PORT}`)
     })
@@ -386,11 +443,8 @@ export const start = async () => {
   }
 }
 
-
-// start();
-
 // query {
-//   user(userId: 100) {
+//   user(username: "Roy.Koepp16") {
 //     username
 //     email
 //     firstName
@@ -398,6 +452,13 @@ export const start = async () => {
 //     balance
 //     accountStatus
 //     userId
+//   }
+// }
+
+// query {
+//   transactionId(transactionId: 1) {
+//     transactionId
+//     status
 //   }
 // }
 
@@ -422,4 +483,12 @@ export const start = async () => {
 //     }
 //     timestamp
 //   }
+// }
+
+// mutation {
+//   cacheTransactionId(key: "transactionId", value: "pending")
+// }
+
+// query {
+//   getTransationId(key: "1")
 // }
