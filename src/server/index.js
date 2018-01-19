@@ -2,7 +2,8 @@
 //   appName: 'client-server'
 // });
 
-import apm from 'elastic-apm-node/start'
+import newrelic from 'newrelic';
+// import apm from 'elastic-apm-node/start';
 
 import 'babel-core/register';
 import 'babel-polyfill';

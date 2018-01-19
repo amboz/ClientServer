@@ -20,8 +20,18 @@ Venmo Clone Microservice
 
 ## Requirements
 
-- Node 6.11.x
-- TBD
+- Node 9.11.x
+- npm 5.4.x
+- MongoDB 2.2.x
+- Redis 2.8.x
+
+### Installing Dependencies
+
+From within the root directory:
+
+```
+npm install
+```
 
 ## Other Information
 

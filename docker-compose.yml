@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  server:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - 'database'
+      - 'redis'
+    ports: 
+      - '3000:3000'
+  
+  redis:
+    image: redis:3.2-alpine
+
+  database:
+    image: mongo:latest

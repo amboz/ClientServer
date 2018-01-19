@@ -4,7 +4,7 @@
   "description": "Venmo Clone Microservice",
   "main": "dist/server/index.js",
   "scripts": {
-    "start": "node dist/server/index.js",
+    "start": "node -r dotenv/config dist/server/index.js",
     "build": "babel -d dist/ src/",
     "server-dev": "nodemon src/server/index.js"
   },
@@ -30,6 +30,7 @@
     "eslint-plugin-react": "^7.5.1"
   },
   "dependencies": {
+    "apollo-link-error": "^1.0.3",
     "apollo-server-express": "^1.3.0",
     "aws-sdk": "^2.171.0",
     "axios": "^0.17.1",
@@ -41,6 +42,7 @@
     "bluebird": "^3.5.1",
     "body-parser": "^1.18.2",
     "cors": "^2.8.1",
+    "dotenv": "^4.0.0",
     "elastic-apm-node": "^0.9.0",
     "express": "^4.16.2",
     "express-graphql": "^0.6.11",
@@ -52,8 +54,10 @@
     "lodash": "^4.17.4",
     "mongodb": "^2.2.15",
     "mongoose": "^4.11.6",
+    "newrelic": "^2.4.2",
     "nodemon": "^1.12.7",
     "redis": "^2.8.0",
+    "redis-rejson": "^1.0.0",
     "sqs-consumer": "^3.8.0"
   }
 }
