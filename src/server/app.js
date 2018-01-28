@@ -21,30 +21,14 @@ const numOfCPUs = os.cpus().length;
 
 rejson(redis);
 
-//CLIENT-SERVER
-//(1) get payment/cashout
-  //--> generate and send to queue1
-  //--> respond to client
-
-//(2) respond to client polling
-  //--> grab transactionID/user IDs/user balances from queue --> add to cache(?)
-    //--> update cached transIDs/statuses and user balances
-  //--> tell queue1 to delete message
-  //-->respond to client with transaction status (by ID) by reading from cache?
-
-//(3) reconcile balances
-  //--> grab users and balances from queue2
-  //--> write to db with updated balances
-  //--> tell queue2 to delete message
-
-export const start = async () => {
+export const startServer = async () => {
   if (cluster.isMaster) {
     for (var i = 0; i < numOfCPUs; i++) {
       cluster.fork();
     }
 
     cluster.on('exit', (worker) => {
-      console.log(`Worker %d ${worker.id} died`);
+      console.log(`Worker ${worker.id} died`);
 
       cluster.fork();
     })
@@ -132,13 +116,10 @@ export const start = async () => {
           },
           //find a transaction's status by transactionId
           transactionId: async (root, {transactionId}) => {
+            let transId = JSON.stringify(transactionId);
             //from db:
               //TransactionId is a single, incrementing counter so only one record will be returned from MongoDB
               // return (await TransactionId.findOne({transactionId: transactionId}));
-            let transId = JSON.stringify(transactionId);
-            // redisClient.get(1, function(err, data) {
-            //   return data;
-            // }));
 
             //from cache:
             await redisClient.get(transId, (err, data) => {
@@ -153,14 +134,14 @@ export const start = async () => {
             })
             
             //TODO: delete from cache
-          },
-          getTransactionId: (parent, {key}) => {
-            try {
-              return redisClient.getAsync(key);
-            } catch (e) {
-              return null;
-            }
           }
+          // getTransactionId: (parent, {key}) => {
+          //   try {
+          //     return redisClient.getAsync(key);
+          //   } catch (e) {
+          //     return null;
+          //   }
+          // }
         },
         Mutation: {
           createUser: async (root, args, context, info) => {
@@ -462,8 +443,7 @@ export const start = async () => {
       // app.use(apm.middleware.express());
 
       app.listen(PORT, () => {
-        // console.log(`Listening on ${PORT}`)
-        console.log(`Listening on ${PORT} as worker %d ${cluster.worker.id}`);
+        console.log(`Listening on ${PORT} as worker ${cluster.worker.id}`);
       })
 
     } catch(err) {
@@ -471,54 +451,3 @@ export const start = async () => {
     }
   }
 }
-
-
-// query {
-//   user(username: "Roy.Koepp16") {
-//     username
-//     email
-//     firstName
-//     lastName
-//     balance
-//     accountStatus
-//     userId
-//   }
-// }
-
-// query {
-//   transactionId(transactionId: 1) {
-//     transactionId
-//     status
-//   }
-// }
-
-// mutation {
-//   generateTransaction(payerUsername: "Ferne_Lueilwitz", payeeUsername: "Erna96", amount: 100) {
-//     payer {
-//       userId
-//       firstName
-//       lastName
-//       balance
-//     }
-//     payee {
-//       userId
-//       firstName
-//       lastName
-//       balance
-//     }
-//     amount
-//     transactionType
-//     transactionId {
-//       status
-//     }
-//     timestamp
-//   }
-// }
-
-// mutation {
-//   cacheTransactionId(key: "transactionId", value: "pending")
-// }
-
-// query {
-//   getTransationId(key: "1")
-// }
