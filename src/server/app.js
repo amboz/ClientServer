@@ -61,7 +61,7 @@ export const startServer = async () => {
           firstName: String
           lastName: String
           balance: Float
-          accountStatus: String
+          accountStatus: Boolean
           userId: Int
         }
 
@@ -87,7 +87,7 @@ export const startServer = async () => {
             firstName: String
             lastName: String
             balance: Float
-            accountStatus: String
+            accountStatus: Boolean
             userId: Int
           ): User
 
@@ -126,7 +126,7 @@ export const startServer = async () => {
               if (err) {
                 console.log(err);
               } else {
-                console.log('data', data);
+                console.log(`$data from redis: ${data}`);
                 return (
                   {status: data}
                 )
@@ -190,9 +190,9 @@ export const startServer = async () => {
 
             sqs.sendMessage(params, (err, data) => {
               if (err) {
-                console.log('error sending message to queue with', err);
+                console.log(`error sending message to queue with ${err}`);
               } else {
-                console.log('msg sent to queue');
+                console.log(`msg sent to queue`);
               } 
             });
 
@@ -285,7 +285,7 @@ export const startServer = async () => {
           if (err) {
             res.send(err);
           } else {
-            console.log('/receive MSG DATA', data);
+            console.log(`/receive MSG DATA: ${data}`);
             consumer.handleMessage();
             res.send(data);
           } 
@@ -332,7 +332,7 @@ export const startServer = async () => {
         handleMessage: (message, done) => {
           let body = JSON.parse(message.Body);
           //work is currently just logging the body of the message
-          console.log('message body:', body);
+          console.log(`message body: ${body}`);
 
           //write transactions to cache
           body.forEach(async (obj) => {

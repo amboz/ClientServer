@@ -27,7 +27,8 @@
     "eslint-config-airbnb": "^16.1.0",
     "eslint-plugin-import": "^2.8.0",
     "eslint-plugin-jsx-a11y": "^6.0.3",
-    "eslint-plugin-react": "^7.5.1"
+    "eslint-plugin-react": "^7.5.1",
+    "uuid": "^3.2.1"
   },
   "dependencies": {
     "apollo-link-error": "^1.0.3",
@@ -41,6 +42,7 @@
     "babel-preset-es2015": "^6.24.1",
     "bluebird": "^3.5.1",
     "body-parser": "^1.18.2",
+    "cassandra-driver": "^3.3.0",
     "cors": "^2.8.1",
     "dotenv": "^4.0.0",
     "elastic-apm-node": "^0.9.0",

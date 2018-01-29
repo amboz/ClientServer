@@ -34,8 +34,9 @@ dist/
 node_modules/
 bower_components/
 
-src/database/helpers/users.txt
 src/database/helpers/users.json
+src/database/userDataToSeed.csv
+src/database/sampleData.json
 
 config.json
 newrelic.js
